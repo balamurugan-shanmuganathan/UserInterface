@@ -1,0 +1,227 @@
+# app.py
+import base64
+from datetime import datetime
+import streamlit as st
+
+st.set_page_config(page_title="HEDISAbstractor.AI", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    /* Base spacing */
+    .block-container {padding-top: 6rem !important; padding-bottom: 2rem;}
+
+    /* Sticky top header */
+    .app-header {
+        position: sticky;
+        top: 2.8rem; /* offset for Streamlit toolbar */
+        z-index: 999;
+        background: linear-gradient(90deg, #ff6a00, #ff8e3c);
+        color: white;
+        border-radius: 0 0 12px 12px;
+        padding: 12px 16px;
+        margin: 0 -1rem 1rem -1rem; /* stretch full width */
+        display:flex; align-items:center; justify-content:space-between;
+        box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+    .brand {font-weight: 800; font-size: 20px; letter-spacing:.2px}
+    .brand small {opacity:.9; font-weight:600; margin-left:8px}
+    .right-bar {display:flex; gap:10px; align-items:center}
+    .pill {
+        display:inline-flex; align-items:center; gap:8px;
+        background: rgba(255,255,255,.18);
+        padding:6px 10px; border-radius: 999px; font-weight:600;
+    }
+    .avatar {
+        width:28px; height:28px; border-radius:50%;
+        background:#fff; color:#ff6a00; font-weight:800;
+        display:inline-flex; align-items:center; justify-content:center;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <div class="app-header">
+      <div class="brand">Test Application <small>App</small></div>
+      <div class="right-bar">
+        <span class="pill">Deploy</span>
+        <span class="pill"><span class="avatar">A</span> Hi, Bala</span>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# -------------------- Sidebar --------------------
+st.sidebar.header("Navigation")
+nav = st.sidebar.radio(
+    "Go to", 
+    ["New File Intake", "ReviewMember", "Data Repository", "App Statistics", "Summarization"],
+    index=0,
+)
+
+if "page_mode" not in st.session_state:
+    st.session_state.page_mode = "Single Processing"
+
+st.sidebar.markdown("Select a page:")
+st.session_state.page_mode = st.sidebar.radio(
+    "", ["Single Processing", "Batch Processing"], index=0
+)
+
+# -------------------- Helpers --------------------
+MEASURES = [
+    "BCS", "BPD", "CBP", "HBD", "EED", "CCS",
+    "COL", "LSD", "PPC", "ABA", "WCC", "W30", "AAB", "CDC"
+]
+
+DEFAULT_NONCOMPLIANT = ["BCS", "BPD", "CBP", "HBD", "EED", "CCS"]
+DEFAULT_COMPLIANT = ["COL", "LSD", "PPC"]
+
+def file_size_mb(file) -> float:
+    try:
+        return len(file.getvalue()) / (1024 * 1024)
+    except Exception:
+        return 0.0
+
+def embed_pdf(file_bytes: bytes, height=700):
+    b64 = base64.b64encode(file_bytes).decode("utf-8")
+    html = f"""
+    <iframe src="data:application/pdf;base64,{b64}" width="100%" height="{height}" type="application/pdf"></iframe>
+    """
+    st.components.v1.html(html, height=height + 10, scrolling=True)
+
+def reset_page():
+    keys = ["uploaded", "selected_measures", "noncomp", "comp", "select_all"]
+    for k in keys:
+        if k in st.session_state:
+            del st.session_state[k]
+    st.rerun()
+
+# -------------------- Main: New File Intake --------------------
+if nav == "New File Intake":
+    with st.container():
+        st.subheader("New File Intake")
+        with st.container():
+            col1, col2, col3 = st.columns([1, 1, 2])
+            with col1:
+                year = st.selectbox(
+                    "Measurement Year",
+                    [str(y) for y in range(2021, datetime.now().year + 2)],
+                    index=[str(y) for y in range(2021, datetime.now().year + 2)].index("2024"),
+                )
+            with col2:
+                st.write("")  # spacing
+                st.caption(" ")
+
+        st.markdown('<div class="card soft">', unsafe_allow_html=True)
+        if st.session_state.page_mode == "Single Processing":
+            uploaded = st.file_uploader(
+                "Upload a PDF and Process it using GenAI:",
+                type=["pdf"],
+                key="upload-single",
+                help="Drag & drop a single PDF (limit ~200MB).",
+            )
+        else:
+            uploaded = st.file_uploader(
+                "Batch Upload (multiple PDFs):",
+                type=["pdf"],
+                accept_multiple_files=True,
+                key="upload-batch",
+                help="Drag & drop multiple PDFs (limit ~200MB each).",
+            )
+        st.markdown(
+            '<div class="muted">Limit: 200MB per file • Type: PDF</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Show uploaded files
+        if uploaded:
+            if isinstance(uploaded, list):
+                for f in uploaded:
+                    with st.expander(f"Uploaded: {f.name}  —  {file_size_mb(f):.2f} MB", expanded=False):
+                        if st.button(f"View PDF ▸", key=f"view-{f.name}"):
+                            embed_pdf(f.getvalue(), height=700)
+            else:
+                f = uploaded
+                with st.expander(f"Uploaded File: {f.name}  —  {file_size_mb(f):.2f} MB", expanded=True):
+                    view_it = st.button("View PDF ▸", key="view-single")
+                    if view_it:
+                        embed_pdf(f.getvalue(), height=700)
+
+        # ---------------- Compliance Summary ----------------
+        st.markdown("<div class='card info-card'>", unsafe_allow_html=True)
+        st.markdown("**Compliance Summary**")
+        noncomp = st.session_state.get("noncomp", DEFAULT_NONCOMPLIANT)
+        comp = st.session_state.get("comp", DEFAULT_COMPLIANT)
+
+        # Let the user adjust, but keep the display like the screenshot (two lines)
+        nc = st.multiselect(
+            "Member is **non-compliant** for measures:",
+            MEASURES, default=noncomp, key="noncomp",
+            help="Pick measures that are currently non-compliant"
+        )
+        c = st.multiselect(
+            "Member is **compliant** for measures:",
+            MEASURES, default=comp, key="comp",
+            help="Pick measures that are currently compliant"
+        )
+
+        st.markdown(
+            f"<div>Member is <b>non-compliant</b> for measures: {', '.join(nc) if nc else '—'}.</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div>Member is <b>compliant</b> for measures: {', '.join(c) if c else '—'}.</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # ---------------- Measure chips (select one or more) ----------------
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("**Select one or more options:**")
+
+        if "selected_measures" not in st.session_state:
+            st.session_state.selected_measures = DEFAULT_NONCOMPLIANT.copy()
+
+        # Select All
+        colA, colB = st.columns([1, 3])
+        with colA:
+            select_all = st.checkbox("Select all Measures", key="select_all")
+        if select_all:
+            st.session_state.selected_measures = MEASURES.copy()
+
+        # Multiselect widget to actually choose
+        selected = st.multiselect(
+            "Measures",
+            MEASURES,
+            default=st.session_state.selected_measures,
+            key="selected_measures",
+            label_visibility="collapsed",
+        )
+
+        # Pretty, pill-like rendering (read-only display matching the screenshot vibe)
+        st.markdown(
+            "".join([f"<span class='tag'>{m}<span class='x'>✕</span></span>" for m in selected]) or "<span class='muted'>No measures selected</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # ---------------- Footer buttons ----------------
+        col1, col2, colsp = st.columns([1, 1, 6])
+        with col1:
+            if st.button("Submit", type="primary"):
+                st.success(
+                    f"Submitted for {year} • {len(selected)} measure(s) • Mode: {st.session_state.page_mode}"
+                )
+        with col2:
+            if st.button("Reset Page"):
+                reset_page()
+
+# -------------------- Placeholder pages --------------------
+else:
+    st.subheader(nav)
+    st.info("This section is a placeholder. Reuse the components from 'New File Intake' as needed.")

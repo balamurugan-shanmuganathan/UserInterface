@@ -1,0 +1,219 @@
+# app.py
+from io import BytesIO
+from datetime import datetime
+import base64
+import numpy as np
+import pandas as pd
+import streamlit as st
+from PyPDF2 import PdfReader
+from PIL import Image
+import streamlit.components.v1 as components
+
+st.set_page_config(page_title="Test Application", layout="wide")
+
+# ===================== Styles & Header =====================
+st.markdown(
+    """
+    <style>
+      .block-container {padding-top: .8rem; padding-bottom: 2rem;}
+      .app-header{
+        background: linear-gradient(90deg, #ff6a00, #ff8e3c);
+        color:#fff; border-radius:14px; padding:12px 18px; margin-bottom:16px;
+        display:flex; align-items:center; justify-content:space-between;
+        box-shadow:0 10px 30px rgba(255,138,76,.25);
+      }
+      .brand{font-weight:800; font-size:22px; letter-spacing:.2px}
+      .brand small{opacity:.95; font-weight:700; margin-left:8px}
+      .pill{display:inline-flex; align-items:center; gap:8px; background:rgba(255,255,255,.18);
+            padding:6px 10px; border-radius:999px; font-weight:600;}
+      .avatar{width:28px; height:28px; border-radius:50%; background:#fff; color:#ff6a00; font-weight:800;
+              display:inline-flex; align-items:center; justify-content:center;}
+      .soft-card{background:#fafafa; border:1px solid #eee; border-radius:12px; padding:16px; }
+      .muted{color:#6b7280; font-size:12px;}
+      .field-label{font-weight:600; font-size:13px; color:#374151;}
+      .readonly{background:#f9fafb !important; border:1px solid #e5e7eb; border-radius:8px; padding:.5rem .75rem;}
+      .grid-2{display:grid; grid-template-columns: 1fr 1fr; gap:14px;}
+      .kpi{font-weight:700; margin: 2px 0 10px 0;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+def header():
+    st.markdown(
+        """
+        <div class="app-header">
+          <div class="brand">HEDISAbstractor.AI <small>EXL</small></div>
+          <div style="display:flex; gap:10px; align-items:center">
+            <span class="pill">Deploy</span>
+            <span class="pill"><span class="avatar">A</span> Hi, Bala</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# ===================== Sidebar =====================
+st.sidebar.header("Navigation")
+page = st.sidebar.radio(
+    "Go to",
+    ["ReviewMember", "New File Intake", "Data Repository", "App Statistics", "Summarization"],
+    index=0,
+)
+st.sidebar.markdown("### Navigation")
+mode = st.sidebar.radio("Select a page:", ["Single Processing", "Batch Processing"], index=0)
+
+# ===================== Utilities =====================
+def placeholder_image(w=720, h=980, msg="Upload a PDF or image to preview"):
+    """Create a neutral placeholder image (no external assets)."""
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (w, h), color=(248, 250, 252))
+    d = ImageDraw.Draw(img)
+    text_w, text_h = d.textsize(msg)
+    d.text(((w - text_w) / 2, (h - text_h) / 2), msg, fill=(107, 114, 128))
+    return img
+
+def embed_pdf(file_bytes: bytes, height=900):
+    """Embed PDF using base64 inside an iframe (browser safe)."""
+    b64 = base64.b64encode(file_bytes).decode("utf-8")
+    pdf_display = f"""
+        <iframe src="data:application/pdf;base64,{b64}#view=FitH"
+        width="100%" height="{height}" type="application/pdf"></iframe>
+    """
+    st.markdown(pdf_display, unsafe_allow_html=True)
+
+def render_pdf_page(file_bytes: bytes, page_num: int):
+    """
+    Try to render a single PDF page to an image using pdf2image (needs poppler).
+    If not available, return None and caller should use embed_pdf().
+    """
+    try:
+        from pdf2image import convert_from_bytes
+        images = convert_from_bytes(
+            file_bytes, dpi=150, first_page=page_num, last_page=page_num
+        )
+        return images[0] if images else None
+    except Exception:
+        return None
+
+# ===================== Sample Data (replace with your pipeline outputs) =====================
+member_info = {
+    "Confidence Score": "89.20%",
+    "Measurement Year": "2024",
+    "Name": "Linda Stark",
+    "Age": "52",
+    "Gender": "Female",
+    "DOB": "12/05/1971",
+    "DOS Gen": "10/29/2024",
+    "Height cm": "158.75",
+    "Weight kg": "63.4",
+    "BMI": "25.2",
+    "LOB": "Commercial PPO",
+}
+
+# ===================== Pages =====================
+def review_member_page():
+    header()
+
+    tabs = st.tabs(["Member Info", "BCS", "CBP", "HBD", "BPD", "EED", "CCS", "COL"])
+    with tabs[0]:
+        # Two main columns (left: form, right: image/PDF viewer)
+        left, right = st.columns([1.2, 1])
+
+        with left:
+            st.markdown("#### ")
+            st.markdown("**Confidence Score:** " + member_info["Confidence Score"])
+            st.markdown("**Measurement Year:** " + member_info["Measurement Year"])
+
+            # Read-only fields
+            with st.container():
+                st.markdown('<div class="soft-card">', unsafe_allow_html=True)
+                st.markdown('<div class="grid-2">', unsafe_allow_html=True)
+
+                def ro(label, value):
+                    st.markdown(f"<div class='field-label'>{label}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='readonly'>{value}</div>", unsafe_allow_html=True)
+
+                for k, v in member_info.items():
+                    if k not in ["Confidence Score", "Measurement Year"]:
+                        ro(k, v)
+
+                st.markdown('</div>', unsafe_allow_html=True)  # grid-2
+                st.markdown('</div>', unsafe_allow_html=True)  # soft-card
+
+        with right:
+            st.markdown("#### Document Viewer")
+            uploaded = st.file_uploader(
+                "Upload PDF or image to preview",
+                type=["pdf", "png", "jpg", "jpeg"],
+                key="doc_viewer",
+            )
+
+            if uploaded is None:
+                img = placeholder_image(msg="No file uploaded — showing placeholder")
+                st.image(img, use_column_width=True)
+
+            else:
+                data = uploaded.read()
+
+                if uploaded.type == "application/pdf" or uploaded.name.lower().endswith(".pdf"):
+                    # Count total pages first
+                    pdf_reader = PdfReader(BytesIO(data))
+                    total_pages = len(pdf_reader.pages)
+
+                    # Choose page number within range
+                    page_num = st.number_input(
+                        "Select page number",
+                        min_value=1,
+                        max_value=total_pages,
+                        value=1,
+                        step=1,
+                    )
+
+                    # Try rendering a single page
+                    img = render_pdf_page(data, int(page_num))
+                    if img is not None:
+                        st.image(img, use_column_width=True)
+                    else:
+                        st.info("Poppler not available — showing embedded PDF instead.")
+                        embed_pdf(data, height=900)
+
+                else:
+                    # Image file
+                    st.image(data, use_column_width=True)
+
+    # Other tabs
+    def measure_tab(name):
+        st.markdown(f"**{name}** – placeholder content.")
+        df = pd.DataFrame(
+            {
+                "Attribute": ["Member_id", "FileID", f"{name}_evidence", f"{name}_page_No"],
+                "Value": ["2420", "Linda_Test_Record_2420.pdf", "—", "—"],
+            }
+        )
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+    with tabs[1]: measure_tab("BCS")
+    with tabs[2]: measure_tab("CBP")
+    with tabs[3]: measure_tab("HBD")
+    with tabs[4]: measure_tab("BPD")
+    with tabs[5]: measure_tab("EED")
+    with tabs[6]: measure_tab("CCS")
+    with tabs[7]: measure_tab("COL")
+
+def placeholder_page(title):
+    header()
+    st.subheader(title)
+    st.info("Placeholder page. Build out as needed.")
+
+# ===================== Router =====================
+if page == "ReviewMember":
+    review_member_page()
+elif page == "New File Intake":
+    placeholder_page("New File Intake")
+elif page == "Data Repository":
+    placeholder_page("Data Repository")
+elif page == "App Statistics":
+    placeholder_page("App Statistics")
+else:
+    placeholder_page("Summarization")
