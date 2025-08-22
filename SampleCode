@@ -1,57 +1,50 @@
 # app.py
-import base64
 from datetime import datetime
+import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="HEDISAbstractor.AI", layout="wide")
 
-# -------------------- Styles --------------------
+# ===================== Shared Styles / Header =====================
 st.markdown(
     """
     <style>
-    /* Tweak base spacing */
-    .block-container {padding-top: 1rem; padding-bottom: 2rem;}
-    /* Top header */
-    .app-header {
-        background: linear-gradient(90deg, #ff6a00, #ff8e3c);
-        color: white; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px;
-        display:flex; align-items:center; justify-content:space-between;
-        box-shadow: 0 4px 16px rgba(0,0,0,.08);
-    }
-    .brand {font-weight: 800; font-size: 20px; letter-spacing:.2px}
-    .brand small {opacity:.9; font-weight:600; margin-left:8px}
-    .right-bar {display:flex; gap:10px; align-items:center}
-    .pill {
-        display:inline-flex; align-items:center; gap:8px; background: rgba(255,255,255,.18);
-        padding:6px 10px; border-radius: 999px; font-weight:600;
-    }
-    .avatar {width:28px; height:28px; border-radius:50%; background:#fff; color:#ff6a00; font-weight:800;
-             display:inline-flex; align-items:center; justify-content:center;}
-    /* Card helpers */
-    .card {background:#ffffff; border:1px solid #eee; border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.03);}
-    .soft {background:#fafafa}
-    .info-card {background:#eef6ff; border-left:4px solid #3b82f6;}
-    .warn-card {background:#fff3f3; border-left:4px solid #ef4444;}
-    /* Measure tags */
-    .tag {display:inline-block; padding:4px 10px; border-radius:20px; background:#fff0e5;
-          border:1px solid #ffd5b5; margin:4px 6px 0 0; font-weight:600;}
-    .tag .x {margin-left:6px; opacity:.7;}
-    /* Small helper text */
-    .muted {color:#6b7280; font-size:12px;}
-    /* Make file-uploader label denser */
-    label[for^="upload-"] {font-weight:700;}
+      .block-container {padding-top: 0.8rem; padding-bottom: 2rem;}
+      /* Orange header */
+      .app-header {
+          background: linear-gradient(90deg, #ff6a00, #ff8e3c);
+          color: #fff; border-radius: 14px; padding: 12px 18px; margin-bottom: 16px;
+          display:flex; align-items:center; justify-content:space-between;
+          box-shadow: 0 10px 30px rgba(255, 138, 76, .25);
+      }
+      .brand {font-weight: 800; font-size: 22px; letter-spacing:.2px}
+      .brand small {opacity:.95; font-weight:700; margin-left:8px}
+      .pill {
+          display:inline-flex; align-items:center; gap:8px; background: rgba(255,255,255,.18);
+          padding:6px 10px; border-radius: 999px; font-weight:600;
+      }
+      .avatar {width:28px; height:28px; border-radius:50%; background:#fff; color:#ff6a00; font-weight:800;
+               display:inline-flex; align-items:center; justify-content:center;}
+
+      /* Cards */
+      .card {background:#fff; border:1px solid #eee; border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.03);}
+      .soft {background:#fafafa}
+      .muted {color:#6b7280; font-size:12px;}
+      .kpi {font-weight:700; margin: 2px 0 8px 0;}
+
+      /* Buttons area */
+      .footer-btns {display:flex; gap:12px; margin-top: 16px;}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# -------------------- Header --------------------
-with st.container():
+def header():
     st.markdown(
         """
         <div class="app-header">
           <div class="brand">HEDISAbstractor.AI <small>EXL</small></div>
-          <div class="right-bar">
+          <div style="display:flex; gap:10px; align-items:center">
             <span class="pill">Deploy</span>
             <span class="pill"><span class="avatar">A</span> Hi, Ayush</span>
           </div>
@@ -60,173 +53,161 @@ with st.container():
         unsafe_allow_html=True,
     )
 
-# -------------------- Sidebar --------------------
+# ===================== Sidebar =====================
 st.sidebar.header("Navigation")
-nav = st.sidebar.radio(
-    "Go to", 
-    ["New File Intake", "ReviewMember", "Data Repository", "App Statistics", "Summarization"],
+page = st.sidebar.radio(
+    "Go to",
+    ["ReviewMember", "New File Intake", "Data Repository", "App Statistics", "Summarization"],
     index=0,
 )
+st.sidebar.markdown("### Navigation")
+mode = st.sidebar.radio("Select a page:", ["Single Processing", "Batch Processing"], index=0)
 
-if "page_mode" not in st.session_state:
-    st.session_state.page_mode = "Single Processing"
+# ===================== Sample Data =====================
+# You can replace these with real values / model outputs.
+member_profile = {
+    "Member_id": "2420",
+    "FileID": "Linda_Test_Record_2420.pdf",
+    "Name": "Linda Stark",
+    "DOB": "02/07/1964",
+    "Gender": "Female",
+    "LOB": "Commercial PPO",
+}
 
-st.sidebar.markdown("Select a page:")
-st.session_state.page_mode = st.sidebar.radio(
-    "", ["Single Processing", "Batch Processing"], index=0
+bcs_details = pd.DataFrame(
+    {
+        "Attribute": [
+            "Member_id",
+            "FileID",
+            "Name",
+            "Mammogram",
+            "Mammogram_page_No",
+            "Mammogram_DOS",
+            "Mammogram_DOS_page_No",
+            "Bilateral_Mastectomy",
+        ],
+        "Value": [
+            "2420",
+            "Linda_Test_Record_2420.pdf",
+            "Linda Stark",
+            "Yes",
+            "2",
+            "05/28/2024",
+            "2",
+            "Yes",
+        ],
+    }
 )
 
-# -------------------- Helpers --------------------
-MEASURES = [
-    "BCS", "BPD", "CBP", "HBD", "EED", "CCS",
-    "COL", "LSD", "PPC", "ABA", "WCC", "W30", "AAB", "CDC"
-]
+# ===================== Pages =====================
+def page_review_member():
+    header()
+    st.subheader("Member Info and Measures Data")
 
-DEFAULT_NONCOMPLIANT = ["BCS", "BPD", "CBP", "HBD", "EED", "CCS"]
-DEFAULT_COMPLIANT = ["COL", "LSD", "PPC"]
+    # Top tabs like in the screenshot
+    tabs = st.tabs(["Member Info", "BCS", "BPD", "CBP", "HBD", "EED", "CCS"])
 
-def file_size_mb(file) -> float:
-    try:
-        return len(file.getvalue()) / (1024 * 1024)
-    except Exception:
-        return 0.0
+    # --- Member Info tab ---
+    with tabs[0]:
+        st.markdown("<div class='card soft'>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1])
+        with c1:
+            st.markdown("**Member ID**")
+            st.write(member_profile["Member_id"])
+            st.markdown("**Name**")
+            st.write(member_profile["Name"])
+        with c2:
+            st.markdown("**Gender**")
+            st.write(member_profile["Gender"])
+            st.markdown("**DOB**")
+            st.write(member_profile["DOB"])
+        with c3:
+            st.markdown("**LOB**")
+            st.write(member_profile["LOB"])
+            st.markdown("**File**")
+            st.write(member_profile["FileID"])
+        with c4:
+            st.markdown("**Processing Mode**")
+            st.write(mode)
+            st.markdown("**Measurement Year**")
+            st.write("2024")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-def embed_pdf(file_bytes: bytes, height=700):
-    b64 = base64.b64encode(file_bytes).decode("utf-8")
-    html = f"""
-    <iframe src="data:application/pdf;base64,{b64}" width="100%" height="{height}" type="application/pdf"></iframe>
-    """
-    st.components.v1.html(html, height=height + 10, scrolling=True)
+    # --- BCS tab (detailed like screenshot) ---
+    with tabs[1]:
+        top = st.columns([8, 1])
+        with top[0]:
+            st.markdown("**Disposition Status:** Exclusion: BCS - Bilateral Mastectomy")
+            st.markdown("**Confidence Score:** 91.618%")
+        with top[1]:
+            with st.popover("ℹ️"):
+                st.write("This section shows the extracted rationale, confidence, and page anchors for the BCS measure.")
 
-def reset_page():
-    keys = ["uploaded", "selected_measures", "noncomp", "comp", "select_all"]
-    for k in keys:
-        if k in st.session_state:
-            del st.session_state[k]
-    st.rerun()
-
-# -------------------- Main: New File Intake --------------------
-if nav == "New File Intake":
-    with st.container():
-        st.subheader("New File Intake")
-        with st.container():
-            col1, col2, col3 = st.columns([1, 1, 2])
-            with col1:
-                year = st.selectbox(
-                    "Measurement Year",
-                    [str(y) for y in range(2021, datetime.now().year + 2)],
-                    index=[str(y) for y in range(2021, datetime.now().year + 2)].index("2024"),
-                )
-            with col2:
-                st.write("")  # spacing
-                st.caption(" ")
-
-        st.markdown('<div class="card soft">', unsafe_allow_html=True)
-        if st.session_state.page_mode == "Single Processing":
-            uploaded = st.file_uploader(
-                "Upload a PDF and Process it using GenAI:",
-                type=["pdf"],
-                key="upload-single",
-                help="Drag & drop a single PDF (limit ~200MB).",
+        with st.expander("Details for BCS", expanded=True):
+            st.dataframe(
+                bcs_details,
+                use_container_width=True,
+                hide_index=True,
             )
-        else:
-            uploaded = st.file_uploader(
-                "Batch Upload (multiple PDFs):",
-                type=["pdf"],
-                accept_multiple_files=True,
-                key="upload-batch",
-                help="Drag & drop multiple PDFs (limit ~200MB each).",
-            )
-        st.markdown(
-            '<div class="muted">Limit: 200MB per file • Type: PDF</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
 
-        # Show uploaded files
-        if uploaded:
-            if isinstance(uploaded, list):
-                for f in uploaded:
-                    with st.expander(f"Uploaded: {f.name}  —  {file_size_mb(f):.2f} MB", expanded=False):
-                        if st.button(f"View PDF ▸", key=f"view-{f.name}"):
-                            embed_pdf(f.getvalue(), height=700)
-            else:
-                f = uploaded
-                with st.expander(f"Uploaded File: {f.name}  —  {file_size_mb(f):.2f} MB", expanded=True):
-                    view_it = st.button("View PDF ▸", key="view-single")
-                    if view_it:
-                        embed_pdf(f.getvalue(), height=700)
-
-        # ---------------- Compliance Summary ----------------
-        st.markdown("<div class='card info-card'>", unsafe_allow_html=True)
-        st.markdown("**Compliance Summary**")
-        noncomp = st.session_state.get("noncomp", DEFAULT_NONCOMPLIANT)
-        comp = st.session_state.get("comp", DEFAULT_COMPLIANT)
-
-        # Let the user adjust, but keep the display like the screenshot (two lines)
-        nc = st.multiselect(
-            "Member is **non-compliant** for measures:",
-            MEASURES, default=noncomp, key="noncomp",
-            help="Pick measures that are currently non-compliant"
-        )
-        c = st.multiselect(
-            "Member is **compliant** for measures:",
-            MEASURES, default=comp, key="comp",
-            help="Pick measures that are currently compliant"
-        )
-
-        st.markdown(
-            f"<div>Member is <b>non-compliant</b> for measures: {', '.join(nc) if nc else '—'}.</div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f"<div>Member is <b>compliant</b> for measures: {', '.join(c) if c else '—'}.</div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ---------------- Measure chips (select one or more) ----------------
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("**Select one or more options:**")
-
-        if "selected_measures" not in st.session_state:
-            st.session_state.selected_measures = DEFAULT_NONCOMPLIANT.copy()
-
-        # Select All
-        colA, colB = st.columns([1, 3])
-        with colA:
-            select_all = st.checkbox("Select all Measures", key="select_all")
-        if select_all:
-            st.session_state.selected_measures = MEASURES.copy()
-
-        # Multiselect widget to actually choose
-        selected = st.multiselect(
-            "Measures",
-            MEASURES,
-            default=st.session_state.selected_measures,
-            key="selected_measures",
-            label_visibility="collapsed",
-        )
-
-        # Pretty, pill-like rendering (read-only display matching the screenshot vibe)
-        st.markdown(
-            "".join([f"<span class='tag'>{m}<span class='x'>✕</span></span>" for m in selected]) or "<span class='muted'>No measures selected</span>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ---------------- Footer buttons ----------------
-        col1, col2, colsp = st.columns([1, 1, 6])
+        st.markdown('<div class="footer-btns">', unsafe_allow_html=True)
+        col1, col2 = st.columns([1, 1])
         with col1:
-            if st.button("Submit", type="primary"):
-                st.success(
-                    f"Submitted for {year} • {len(selected)} measure(s) • Mode: {st.session_state.page_mode}"
-                )
+            st.button("Review Member")
         with col2:
-            if st.button("Reset Page"):
-                reset_page()
+            st.button("View Summary")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-# -------------------- Placeholder pages --------------------
+    # --- Other measure tabs (placeholders you can wire to your data) ---
+    def measure_tab(name, status="Open Gap", conf=82.4):
+        st.markdown(f"**Disposition Status:** {status}")
+        st.markdown(f"**Confidence Score:** {conf:.3f}%")
+        with st.expander(f"Details for {name}", expanded=True):
+            df = pd.DataFrame(
+                {
+                    "Attribute": ["Member_id", "FileID", f"{name}_evidence", f"{name}_page_No"],
+                    "Value": [
+                        member_profile["Member_id"],
+                        member_profile["FileID"],
+                        "—",
+                        "—",
+                    ],
+                }
+            )
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+        st.markdown('<div class="footer-btns">', unsafe_allow_html=True)
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.button("Review Member", key=f"rev_{name}")
+        with col2:
+            st.button("View Summary", key=f"sum_{name}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with tabs[2]:
+        measure_tab("BPD", status="Compliant", conf=88.12)
+    with tabs[3]:
+        measure_tab("CBP", status="Open Gap", conf=76.44)
+    with tabs[4]:
+        measure_tab("HBD", status="Exclusion: Pregnancy", conf=89.03)
+    with tabs[5]:
+        measure_tab("EED", status="Open Gap", conf=80.17)
+    with tabs[6]:
+        measure_tab("CCS", status="Compliant", conf=92.51)
+
+def placeholder_page(title):
+    header()
+    st.subheader(title)
+    st.info("This section is a placeholder. Add your own widgets/data here.")
+
+# ===================== Router =====================
+if page == "ReviewMember":
+    page_review_member()
+elif page == "New File Intake":
+    placeholder_page("New File Intake")
+elif page == "Data Repository":
+    placeholder_page("Data Repository")
+elif page == "App Statistics":
+    placeholder_page("App Statistics")
 else:
-    st.subheader(nav)
-    st.info("This section is a placeholder. Reuse the components from 'New File Intake' as needed.")
+    placeholder_page("Summarization")
