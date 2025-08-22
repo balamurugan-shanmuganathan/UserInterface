@@ -1,39 +1,36 @@
 # app.py
+from io import BytesIO
 from datetime import datetime
+import base64
+import numpy as np
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="HEDISAbstractor.AI", layout="wide")
 
-# ===================== Shared Styles / Header =====================
+# ===================== Styles & Header =====================
 st.markdown(
     """
     <style>
-      .block-container {padding-top: 0.8rem; padding-bottom: 2rem;}
-      /* Orange header */
-      .app-header {
-          background: linear-gradient(90deg, #ff6a00, #ff8e3c);
-          color: #fff; border-radius: 14px; padding: 12px 18px; margin-bottom: 16px;
-          display:flex; align-items:center; justify-content:space-between;
-          box-shadow: 0 10px 30px rgba(255, 138, 76, .25);
+      .block-container {padding-top: .8rem; padding-bottom: 2rem;}
+      .app-header{
+        background: linear-gradient(90deg, #ff6a00, #ff8e3c);
+        color:#fff; border-radius:14px; padding:12px 18px; margin-bottom:16px;
+        display:flex; align-items:center; justify-content:space-between;
+        box-shadow:0 10px 30px rgba(255,138,76,.25);
       }
-      .brand {font-weight: 800; font-size: 22px; letter-spacing:.2px}
-      .brand small {opacity:.95; font-weight:700; margin-left:8px}
-      .pill {
-          display:inline-flex; align-items:center; gap:8px; background: rgba(255,255,255,.18);
-          padding:6px 10px; border-radius: 999px; font-weight:600;
-      }
-      .avatar {width:28px; height:28px; border-radius:50%; background:#fff; color:#ff6a00; font-weight:800;
-               display:inline-flex; align-items:center; justify-content:center;}
-
-      /* Cards */
-      .card {background:#fff; border:1px solid #eee; border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.03);}
-      .soft {background:#fafafa}
-      .muted {color:#6b7280; font-size:12px;}
-      .kpi {font-weight:700; margin: 2px 0 8px 0;}
-
-      /* Buttons area */
-      .footer-btns {display:flex; gap:12px; margin-top: 16px;}
+      .brand{font-weight:800; font-size:22px; letter-spacing:.2px}
+      .brand small{opacity:.95; font-weight:700; margin-left:8px}
+      .pill{display:inline-flex; align-items:center; gap:8px; background:rgba(255,255,255,.18);
+            padding:6px 10px; border-radius:999px; font-weight:600;}
+      .avatar{width:28px; height:28px; border-radius:50%; background:#fff; color:#ff6a00; font-weight:800;
+              display:inline-flex; align-items:center; justify-content:center;}
+      .soft-card{background:#fafafa; border:1px solid #eee; border-radius:12px; padding:16px; }
+      .muted{color:#6b7280; font-size:12px;}
+      .field-label{font-weight:600; font-size:13px; color:#374151;}
+      .readonly{background:#f9fafb !important; border:1px solid #e5e7eb; border-radius:8px; padding:.5rem .75rem;}
+      .grid-2{display:grid; grid-template-columns: 1fr 1fr; gap:14px;}
+      .kpi{font-weight:700; margin: 2px 0 10px 0;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -63,146 +60,149 @@ page = st.sidebar.radio(
 st.sidebar.markdown("### Navigation")
 mode = st.sidebar.radio("Select a page:", ["Single Processing", "Batch Processing"], index=0)
 
-# ===================== Sample Data =====================
-# You can replace these with real values / model outputs.
-member_profile = {
-    "Member_id": "2420",
-    "FileID": "Linda_Test_Record_2420.pdf",
+# ===================== Utilities =====================
+def placeholder_image(w=720, h=980, msg="Upload a PDF or image to preview"):
+    """Create a neutral placeholder image (no external assets)."""
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.new("RGB", (w, h), color=(248, 250, 252))
+    d = ImageDraw.Draw(img)
+    text_w, text_h = d.textsize(msg)
+    d.text(((w - text_w) / 2, (h - text_h) / 2), msg, fill=(107, 114, 128))
+    return img
+
+def embed_pdf(file_bytes: bytes, height=900):
+    """Fallback inline PDF viewer if pdf2image or poppler are unavailable."""
+    b64 = base64.b64encode(file_bytes).decode("utf-8")
+    html = f"""
+    <iframe src="data:application/pdf;base64,{b64}#view=FitH" width="100%" height="{height}" type="application/pdf"></iframe>
+    """
+    st.components.v1.html(html, height=height + 5, scrolling=True)
+
+def render_pdf_page(file_bytes: bytes, page_num: int):
+    """
+    Try to render a single PDF page to an image using pdf2image (needs poppler).
+    If not available, return None and caller should use embed_pdf().
+    """
+    try:
+        from pdf2image import convert_from_bytes
+        images = convert_from_bytes(
+            file_bytes, dpi=150, first_page=page_num, last_page=page_num
+        )
+        return images[0] if images else None
+    except Exception:
+        return None
+
+# ===================== Sample Data (replace with your pipeline outputs) =====================
+member_info = {
+    "Confidence Score": "89.20%",
+    "Measurement Year": "2024",
     "Name": "Linda Stark",
-    "DOB": "02/07/1964",
+    "Age": "52",
     "Gender": "Female",
+    "DOB": "12/05/1971",
+    "DOS Gen": "10/29/2024",
+    "Height cm": "158.75",
+    "Weight kg": "63.4",
+    "BMI": "25.2",
     "LOB": "Commercial PPO",
 }
 
-bcs_details = pd.DataFrame(
-    {
-        "Attribute": [
-            "Member_id",
-            "FileID",
-            "Name",
-            "Mammogram",
-            "Mammogram_page_No",
-            "Mammogram_DOS",
-            "Mammogram_DOS_page_No",
-            "Bilateral_Mastectomy",
-        ],
-        "Value": [
-            "2420",
-            "Linda_Test_Record_2420.pdf",
-            "Linda Stark",
-            "Yes",
-            "2",
-            "05/28/2024",
-            "2",
-            "Yes",
-        ],
-    }
-)
-
 # ===================== Pages =====================
-def page_review_member():
+def review_member_page():
     header()
-    st.subheader("Member Info and Measures Data")
 
-    # Top tabs like in the screenshot
-    tabs = st.tabs(["Member Info", "BCS", "BPD", "CBP", "HBD", "EED", "CCS"])
-
-    # --- Member Info tab ---
+    tabs = st.tabs(["Member Info", "BCS", "CBP", "HBD", "BPD", "EED", "CCS", "COL"])
     with tabs[0]:
-        st.markdown("<div class='card soft'>", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1])
-        with c1:
-            st.markdown("**Member ID**")
-            st.write(member_profile["Member_id"])
-            st.markdown("**Name**")
-            st.write(member_profile["Name"])
-        with c2:
-            st.markdown("**Gender**")
-            st.write(member_profile["Gender"])
-            st.markdown("**DOB**")
-            st.write(member_profile["DOB"])
-        with c3:
-            st.markdown("**LOB**")
-            st.write(member_profile["LOB"])
-            st.markdown("**File**")
-            st.write(member_profile["FileID"])
-        with c4:
-            st.markdown("**Processing Mode**")
-            st.write(mode)
-            st.markdown("**Measurement Year**")
-            st.write("2024")
-        st.markdown("</div>", unsafe_allow_html=True)
+        # Two main columns (left: form, right: image/PDF viewer)
+        left, right = st.columns([1.2, 1])
 
-    # --- BCS tab (detailed like screenshot) ---
-    with tabs[1]:
-        top = st.columns([8, 1])
-        with top[0]:
-            st.markdown("**Disposition Status:** Exclusion: BCS - Bilateral Mastectomy")
-            st.markdown("**Confidence Score:** 91.618%")
-        with top[1]:
-            with st.popover("ℹ️"):
-                st.write("This section shows the extracted rationale, confidence, and page anchors for the BCS measure.")
+        with left:
+            st.markdown("#### ")
+            st.markdown("**Confidence Score:** " + member_info["Confidence Score"])
+            st.markdown("**Measurement Year:** " + member_info["Measurement Year"])
+            st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-        with st.expander("Details for BCS", expanded=True):
-            st.dataframe(
-                bcs_details,
-                use_container_width=True,
-                hide_index=True,
+            # Read-only fields styled like inputs
+            with st.container():
+                st.markdown('<div class="soft-card">', unsafe_allow_html=True)
+                st.markdown('<div class="grid-2">', unsafe_allow_html=True)
+
+                def ro(label, value):
+                    st.markdown(f"<div class='field-label'>{label}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='readonly'>{value}</div>", unsafe_allow_html=True)
+
+                ro("Name",            member_info["Name"])
+                ro("Age",             member_info["Age"])
+                ro("Gender",          member_info["Gender"])
+                ro("DOB",             member_info["DOB"])
+                ro("DOS Gen",         member_info["DOS Gen"])
+                ro("Height cm",       member_info["Height cm"])
+                ro("Weight kg",       member_info["Weight kg"])
+                ro("BMI",             member_info["BMI"])
+                ro("LOB",             member_info["LOB"])
+                # Add more fields as needed ...
+
+                st.markdown('</div>', unsafe_allow_html=True)  # grid-2
+                st.markdown('</div>', unsafe_allow_html=True)  # soft-card
+
+        with right:
+            st.markdown("#### ")
+            # Uploader for PDF or image pages
+            uploaded = st.file_uploader(
+                "Upload PDF or image to preview",
+                type=["pdf", "png", "jpg", "jpeg"],
+                key="doc_viewer",
             )
 
-        st.markdown('<div class="footer-btns">', unsafe_allow_html=True)
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.button("Review Member")
-        with col2:
-            st.button("View Summary")
-        st.markdown("</div>", unsafe_allow_html=True)
+            page_num = st.number_input("Enter page number", min_value=1, value=1, step=1)
 
-    # --- Other measure tabs (placeholders you can wire to your data) ---
-    def measure_tab(name, status="Open Gap", conf=82.4):
-        st.markdown(f"**Disposition Status:** {status}")
-        st.markdown(f"**Confidence Score:** {conf:.3f}%")
-        with st.expander(f"Details for {name}", expanded=True):
-            df = pd.DataFrame(
-                {
-                    "Attribute": ["Member_id", "FileID", f"{name}_evidence", f"{name}_page_No"],
-                    "Value": [
-                        member_profile["Member_id"],
-                        member_profile["FileID"],
-                        "—",
-                        "—",
-                    ],
-                }
-            )
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            if uploaded is None:
+                # Use a generated placeholder image
+                img = placeholder_image(msg="No file uploaded — showing placeholder")
+                st.image(img, use_column_width=True)
+            else:
+                data = uploaded.read()
+                if uploaded.type == "application/pdf" or uploaded.name.lower().endswith(".pdf"):
+                    # Try rendering a single page; if that fails, embed whole PDF
+                    img = render_pdf_page(data, int(page_num))
+                    if img is not None:
+                        st.image(img, use_column_width=True)
+                    else:
+                        st.info(
+                            "Single-page preview needs `poppler`. Falling back to inline PDF viewer."
+                        )
+                        embed_pdf(data, height=900)
+                else:
+                    # Image file
+                    st.image(data, use_column_width=True)
 
-        st.markdown('<div class="footer-btns">', unsafe_allow_html=True)
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.button("Review Member", key=f"rev_{name}")
-        with col2:
-            st.button("View Summary", key=f"sum_{name}")
-        st.markdown("</div>", unsafe_allow_html=True)
+    # Other tabs can show per-measure details (wire to your pipeline)
+    def measure_tab(name):
+        st.markdown(f"**{name}** – placeholder content.")
+        df = pd.DataFrame(
+            {
+                "Attribute": ["Member_id", "FileID", f"{name}_evidence", f"{name}_page_No"],
+                "Value": ["2420", "Linda_Test_Record_2420.pdf", "—", "—"],
+            }
+        )
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
-    with tabs[2]:
-        measure_tab("BPD", status="Compliant", conf=88.12)
-    with tabs[3]:
-        measure_tab("CBP", status="Open Gap", conf=76.44)
-    with tabs[4]:
-        measure_tab("HBD", status="Exclusion: Pregnancy", conf=89.03)
-    with tabs[5]:
-        measure_tab("EED", status="Open Gap", conf=80.17)
-    with tabs[6]:
-        measure_tab("CCS", status="Compliant", conf=92.51)
+    with tabs[1]: measure_tab("BCS")
+    with tabs[2]: measure_tab("CBP")
+    with tabs[3]: measure_tab("HBD")
+    with tabs[4]: measure_tab("BPD")
+    with tabs[5]: measure_tab("EED")
+    with tabs[6]: measure_tab("CCS")
+    with tabs[7]: measure_tab("COL")
 
 def placeholder_page(title):
     header()
     st.subheader(title)
-    st.info("This section is a placeholder. Add your own widgets/data here.")
+    st.info("Placeholder page. Build out as needed.")
 
 # ===================== Router =====================
 if page == "ReviewMember":
-    page_review_member()
+    review_member_page()
 elif page == "New File Intake":
     placeholder_page("New File Intake")
 elif page == "Data Repository":
